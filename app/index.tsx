@@ -5,6 +5,12 @@ import { Text, TextInput, View } from 'react-native';
 
 export default function Home() {
   const [input, setInput] = useState('');
+  const [output, setOutput] = useState('');
+
+  const onTranslate = async () => {
+    const translation = input;
+    setOutput(translation);
+  };
 
   return (
     <View className="mx-auto w-full max-w-xl">
@@ -28,7 +34,12 @@ export default function Home() {
             multiline
             maxLength={500}
           />
-          <FontAwesome6 name="circle-arrow-right" size={24} color="royalblue" />
+          <FontAwesome6
+            onPress={onTranslate}
+            name="circle-arrow-right"
+            size={24}
+            color="royalblue"
+          />
         </View>
         <View className="flex-row justify-between">
           <FontAwesome6 name="microphone" size={18} color="dimgray" />
@@ -38,15 +49,15 @@ export default function Home() {
         </View>
       </View>
 
-      {/* Output container */}
-
-      <View className="gap-5 bg-gray-200 p-5">
-        <Text className="min-h-32 text-xl">output</Text>
-        <View className="flex-row justify-between">
-          <FontAwesome6 name="volume-high" size={18} color="dimgray" />
-          <FontAwesome5 name="copy" size={18} color="dimgray" />
+      {output && (
+        <View className="gap-5 bg-gray-200 p-5">
+          <Text className="min-h-32 text-xl">{output}</Text>
+          <View className="flex-row justify-between">
+            <FontAwesome6 name="volume-high" size={18} color="dimgray" />
+            <FontAwesome5 name="copy" size={18} color="dimgray" />
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }
