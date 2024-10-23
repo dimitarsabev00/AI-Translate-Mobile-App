@@ -1,109 +1,92 @@
-import { FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import { Stack } from 'expo-router';
 import { useState } from 'react';
-import { Text, TextInput, View } from 'react-native';
-import { supabase } from '~/utils/supabase';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import { Text, View, TextInput, FlatList } from 'react-native';
+
+import AudioRecording from '~/components/AudioRecording';
+import { languages } from '~/utils/languages';
+import { audioToText, textToSpeech, translate } from '~/utils/translations';
 
 export default function Home() {
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
-
-  const [recording, setRecording] = useState<Audio.Recording>();
-  const [permissionResponse, requestPermission] = Audio.usePermissions();
-
-  const translate = async (text: string) => {
-    const { data } = await supabase.functions.invoke('translate', {
-      body: JSON.stringify({ input: text, from: 'English', to: 'Bulgarian' }),
-    });
-
-    return data?.content || 'Something went wrong!';
-  };
+  const [languageFrom, setLanguageFrom] = useState('English');
+  const [languageTo, setLanguageTo] = useState('Spanish');
+  const [selectLanguageMode, setSelectLanguageMode] = useState<'from' | 'to' | null>(null);
 
   const onTranslate = async () => {
-    const translation = await translate(input);
+    const translation = await translate(input, languageFrom, languageTo);
     setOutput(translation);
   };
 
-  const textToSpeech = async (text: string) => {
-    const { data } = await supabase.functions.invoke('text-to-speech', {
-      body: JSON.stringify({ input: text }),
-    });
-    if (data) {
-      const { sound } = await Audio.Sound.createAsync({
-        uri: `data:audio/mp3;base64,${data.mp3Base64}`,
-      });
-      sound.playAsync();
-    }
+  const speechToText = async (uri: string) => {
+    const text = await audioToText(uri);
+    setInput(text);
+    const translation = await translate(text, languageFrom, languageTo);
+    setOutput(translation);
   };
 
-  const startRecording = async () => {
-    try {
-      if (permissionResponse?.status !== 'granted') {
-        console.log('Requesting permission..');
-        await requestPermission();
-      }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-      console.log('Starting recording..');
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(recording);
-      console.log('Recording started');
-    } catch (err) {
-      console.error('Failed to start recording', err);
-    }
-  };
-
-  const stopRecording = async () => {
-    if (!recording) {
-      return;
-    }
-    console.log('Stopping recording..');
-    setRecording(undefined);
-    await recording.stopAndUnloadAsync();
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-    });
-    const uri = recording.getURI();
-    console.log('Recording stopped and stored at', uri);
-    if (uri) {
-      const audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      const { data, error } = await supabase.functions.invoke('speech-to-text', {
-        body: JSON.stringify({ audioBase64 }),
-      });
-      setInput(data.text);
-      const translation = await translate(data.text);
-      setOutput(translation);
-    }
-  };
+  if (selectLanguageMode) {
+    return (
+      <FlatList
+        data={languages}
+        renderItem={({ item }) => (
+          <Text
+            onPress={() => {
+              if (selectLanguageMode === 'from') {
+                setLanguageFrom(item.name);
+              } else {
+                setLanguageTo(item.name);
+              }
+              setSelectLanguageMode(null);
+            }}
+            className="p-2 px-5">
+            {item.name}
+          </Text>
+        )}
+      />
+    );
+  }
 
   return (
     <View className="mx-auto w-full max-w-xl">
-      <Stack.Screen options={{ title: 'AI Translate' }} />
+      <Stack.Screen options={{ title: 'Translate' }} />
 
       {/* Language selector row */}
       <View className="flex-row justify-around p-5">
-        <Text className="font-semibold color-blue-600">English</Text>
-        <FontAwesome5 name="exchange-alt" size={16} color="gray" />
-        <Text className="font-semibold color-blue-600">Bulgarian</Text>
+        <Text
+          onPress={() => setSelectLanguageMode('from')}
+          className="font-semibold color-blue-600">
+          {languageFrom}
+        </Text>
+        <FontAwesome5
+          onPress={() => {
+            setLanguageFrom(languageTo);
+            setLanguageTo(languageFrom);
+          }}
+          name="exchange-alt"
+          size={16}
+          color="gray"
+        />
+        <Text onPress={() => setSelectLanguageMode('to')} className="font-semibold color-blue-600">
+          {languageTo}
+        </Text>
       </View>
 
       {/* Input container */}
       <View className="border-y border-gray-300 p-5">
         <View className="flex-row gap-5">
+          {/* input */}
           <TextInput
             value={input}
             onChangeText={setInput}
             placeholder="Enter your text"
             className="min-h-32 flex-1 text-xl"
             multiline
-            maxLength={500}
+            maxLength={5000}
           />
+          {/* send button */}
           <FontAwesome6
             onPress={onTranslate}
             name="circle-arrow-right"
@@ -112,17 +95,13 @@ export default function Home() {
           />
         </View>
         <View className="flex-row justify-between">
-          {recording ? (
-            <FontAwesome5 onPress={stopRecording} name="stop-circle" size={24} color="royalblue" />
-          ) : (
-            <FontAwesome6 onPress={startRecording} name="microphone" size={18} color="dimgray" />
-          )}
-          <Text className={input.length > 100 ? 'color-red-500' : 'color-gray-500'}>
-            {input.length} / 500
-          </Text>
+          <AudioRecording onNewRecording={(uri) => speechToText(uri)} />
+
+          <Text className="color-gray-500">{input.length} / 5000</Text>
         </View>
       </View>
 
+      {/* Output container */}
       {output && (
         <View className="gap-5 bg-gray-200 p-5">
           <Text className="min-h-32 text-xl">{output}</Text>
