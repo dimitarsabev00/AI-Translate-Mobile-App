@@ -4,10 +4,14 @@ import { useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { supabase } from '~/utils/supabase';
 import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 
 export default function Home() {
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
+
+  const [recording, setRecording] = useState<Audio.Recording>();
+  const [permissionResponse, requestPermission] = Audio.usePermissions();
 
   const translate = async (text: string) => {
     const { data } = await supabase.functions.invoke('translate', {
@@ -31,6 +35,50 @@ export default function Home() {
         uri: `data:audio/mp3;base64,${data.mp3Base64}`,
       });
       sound.playAsync();
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      if (permissionResponse?.status !== 'granted') {
+        console.log('Requesting permission..');
+        await requestPermission();
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      console.log('Starting recording..');
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(recording);
+      console.log('Recording started');
+    } catch (err) {
+      console.error('Failed to start recording', err);
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) {
+      return;
+    }
+    console.log('Stopping recording..');
+    setRecording(undefined);
+    await recording.stopAndUnloadAsync();
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+    });
+    const uri = recording.getURI();
+    console.log('Recording stopped and stored at', uri);
+    if (uri) {
+      const audioBase64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      const { data, error } = await supabase.functions.invoke('speech-to-text', {
+        body: JSON.stringify({ audioBase64 }),
+      });
+      setInput(data.text);
+      const translation = await translate(data.text);
+      setOutput(translation);
     }
   };
 
@@ -64,7 +112,11 @@ export default function Home() {
           />
         </View>
         <View className="flex-row justify-between">
-          <FontAwesome6 name="microphone" size={18} color="dimgray" />
+          {recording ? (
+            <FontAwesome5 onPress={stopRecording} name="stop-circle" size={24} color="royalblue" />
+          ) : (
+            <FontAwesome6 onPress={startRecording} name="microphone" size={18} color="dimgray" />
+          )}
           <Text className={input.length > 100 ? 'color-red-500' : 'color-gray-500'}>
             {input.length} / 500
           </Text>
